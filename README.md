@@ -49,4 +49,5 @@ The multimodal classifier was trained on manually annotated mouse lumbar spinal 
 
 ### References
 [1] Ståhl, Patrik L., et al. "Visualization and analysis of gene expression in tissue sections by spatial transcriptomics." *Science* 353.6294 (2016): 78-82.
+
 [2] Maniatis, Silas, et al. "Spatiotemporal dynamics of molecular pathology in amyotrophic lateral sclerosis." *Science* 364.6435 (2019): 89-93.
