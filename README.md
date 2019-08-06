@@ -43,7 +43,7 @@ The multimodal classifier was trained on manually annotated mouse lumbar spinal 
 
 1. Upload the bright-field image, cDNA footprint image, and the count file 
 2. Add a mouse lumbar spinal cord template by a double click
-3. Move and rotate the template so that the reticle is centered on the central canal and the arrow points 
+3. Move and rotate the template so that the reticle is centered on the central canal and the arrow aligns with the ventral-dorsal axis 
 4. Press the "Automatic annotation" button
 5. Curate manually the predictions
 
