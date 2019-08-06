@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gloss</title>
+  <style>
+    html {
+      font-family:'helvetica neue';
+      text-align: left;
+      font-size: 10px;
+    }
+
+    body {
+      margin: 10px;
+      font-size: 10px;
+    }
+
+    span {
+      margin: 5px;
+    }
+
+    .flex-container {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
+    .flex-container > div {
+      margin: 1px;
+      padding: 5px;
+    }
+
+    kbd
+    {
+      -moz-border-radius:3px;
+      -moz-box-shadow:0 1px 0 rgba(0,0,0,0.2),0 0 0 2px #fff inset;
+      -webkit-border-radius:3px;
+      -webkit-box-shadow:0 1px 0 rgba(0,0,0,0.2),0 0 0 2px #fff inset;
+      background-color:#f7f7f7;
+      border:1px solid #ccc;
+      border-radius:3px;
+      box-shadow:0 1px 0 rgba(0,0,0,0.2),0 0 0 2px #fff inset;
+      color:#333;
+      display:inline-block;
+      font-family:Arial,Helvetica,sans-serif;
+      font-size:11px;
+      line-height:1.0;
+      margin:0 .1em;
+      padding:.1em .3em;
+      text-shadow:0 1px 0 #fff;
+    }
+
+    /* https://loading.io/css/ */
+    .lds-spinner {
+      color: official;
+      display: inline-block;
+      position: relative;
+      left: 50%;
+      top: 50%;
+      margin-left:-32px;
+      margin-top:-32px;
+      width: 64px;
+      height: 64px;
+    }
+    .lds-spinner div {
+      transform-origin: 32px 32px;
+      animation: lds-spinner 1.2s linear infinite;
+    }
+    .lds-spinner div:after {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 3px;
+      left: 29px;
+      width: 5px;
+      height: 14px;
+      border-radius: 20%;
+      background: #000;
+    }
+    .lds-spinner div:nth-child(1) {
+      transform: rotate(0deg);
+      animation-delay: -1.1s;
+    }
+    .lds-spinner div:nth-child(2) {
+      transform: rotate(30deg);
+      animation-delay: -1s;
+    }
+    .lds-spinner div:nth-child(3) {
+      transform: rotate(60deg);
+      animation-delay: -0.9s;
+    }
+    .lds-spinner div:nth-child(4) {
+      transform: rotate(90deg);
+      animation-delay: -0.8s;
+    }
+    .lds-spinner div:nth-child(5) {
+      transform: rotate(120deg);
+      animation-delay: -0.7s;
+    }
+    .lds-spinner div:nth-child(6) {
+      transform: rotate(150deg);
+      animation-delay: -0.6s;
+    }
+    .lds-spinner div:nth-child(7) {
+      transform: rotate(180deg);
+      animation-delay: -0.5s;
+    }
+    .lds-spinner div:nth-child(8) {
+      transform: rotate(210deg);
+      animation-delay: -0.4s;
+    }
+    .lds-spinner div:nth-child(9) {
+      transform: rotate(240deg);
+      animation-delay: -0.3s;
+    }
+    .lds-spinner div:nth-child(10) {
+      transform: rotate(270deg);
+      animation-delay: -0.2s;
+    }
+    .lds-spinner div:nth-child(11) {
+      transform: rotate(300deg);
+      animation-delay: -0.1s;
+    }
+    .lds-spinner div:nth-child(12) {
+      transform: rotate(330deg);
+      animation-delay: 0s;
+    }
+    @keyframes lds-spinner {
+      0% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+
+    #container{
+      position: relative;
+    }
+    
+    #container canvas, #overlay {
+      position: absolute;
+    }
+  </style>
+
+  <script src="https://code.createjs.com/1.0.0/createjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.14.1/dist/tf.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+  <script src="ThresholdFilter.js"></script>
+  <script src="configuration.js"></script>
+
+  <script>
+    var stage;
+    var tissueSections = [];
+    var spots = [];
+    
+    // move mode := false and rotate mode := true
+    var modifierActive = false;
+    var currentKey = 'u';
+    var zoom;
+    var outputFile = '';
+    var pixelDim = 0;
+    var imageDims = [0,0];
+    var heImage;
+
+    // get the number of AARs (does not take into "Undefined")
+    const nCategories = Object.keys(AAR_CATEGORIES).length;
+
+    // construct AAR category information as defined in categories.js
+    var categoryColors = {};
+    var AARs = [];
+    for (let key in AAR_CATEGORIES) {
+      categoryColors[key] = AAR_CATEGORIES[key];
+      AARs.push(AAR_CATEGORIES[key].label);
+    }
+    // include the "Undefined" cateogory
+    categoryColors['u'] = {'color':'gray','label':'Undefined'}
+
+    if (TENSORFLOW_ANNOTATION) {
+      // tensorflow.js
+      async function loadModel() {
+        const model = await tf.loadModel('https://dl.dropboxusercontent.com/s/ix9r5cgy2uba2x3/model.json');
+        return model;
+      };
+
+      const model = loadModel();
+
+      function classifySpot(spot,tmp3) {
+        model.then(function(foo) {
+      	  let prediction = foo.predict([spot.tensorData.as4D(1,100,100,3),tf.tensor2d(tmp3,[1,2])]).as1D();
+	  // discard predictions with low certaintyl
+       	  if (prediction.max().get() < PT) {
+  	    return;
+          }
+	  let predictedClass = CATEGORIES[prediction.argMax().get()];
+          updateSpotAnnotation(spot,predictedClass);
+          stage.update();
+        });
+      };
+
+      // tensorflow classification
+      function annotateSpots() {
+        tissueSections.forEach(function(tissueSection) {
+  	let tissueSectionCenter = fromPixelToSpot([tissueSection.x,tissueSection.y]);
+  	let tissueSectionRotation = -tissueSection.rotation*Math.PI/180.0;
+  	spots.forEach(function(spot) {
+  	  // only annotate those spots that are in the vicinity
+  	  if (Math.sqrt((tissueSection.x-spot.x)**2+(tissueSection.y-spot.y)**2) < WIDTH/4) {
+  	    let tmp = fromPixelToSpot([spot.x,spot.y]);
+  	    // translate
+  	    tmp[0] -= tissueSectionCenter[0];
+  	    // substract 0.7 because the central canal is below the center
+  	    tmp[1] -= tissueSectionCenter[1]-0.7;
+  	    // rotate
+  	    let tmp2 = [Math.cos(tissueSectionRotation)*tmp[0]-Math.sin(tissueSectionRotation)*tmp[1],-(Math.sin(tissueSectionRotation)*tmp[0]+Math.cos(tissueSectionRotation)*tmp[1])];
+  	    // TODO: maybe we could do a batch prediction
+              classifySpot(spot,tmp2);
+  	  }
+  	});
+          stage.removeChild(tissueSection);
+        });
+        tissueSections = [];
+        document.getElementById('annotateSpots').disabled = true;
+        stage.update();
+
+        $('#overlay').hide();
+      }
+    }
+
+    function modifier(e) {
+      if (TENSORFLOW_ANNOTATION) {
+        if (!modifierActive && e.keyCode == '91') {
+  	modifierActive = true;
+  
+          tissueSections.forEach(function(tissueSection) {
+            stage.removeChild(tissueSection);
+  	  // remove the move
+  	  tissueSection.removeAllEventListeners('mousedown');
+  	  // add the rotation
+  	  tissueSection.addEventListener('mousedown',rotateTissueSectionInit);
+  
+            stage.addChild(tissueSection);
+          });
+  	document.getElementById('mode').innerHTML = 'Rotate mode on (<kbd>⌘</kbd>)';
+        } else if (modifierActive && e.keyCode == '91') {
+  	modifierActive = false;
+  
+          tissueSections.forEach(function(tissueSection) {
+            stage.removeChild(tissueSection);
+  	  // remove the rotation
+  	  tissueSection.removeAllEventListeners('mousedown');
+  	  // add the move
+  	  tissueSection.addEventListener('mousedown',moveTissueSectionInit);
+  
+            stage.addChild(tissueSection);
+          });
+  	document.getElementById('mode').innerHTML = 'Move mode on (<kbd>⌘</kbd>)';
+        } else if (e.key in categoryColors) {
+  	  updateCategorySelection(e.key);
+        }
+
+        stage.update();
+
+      } else {
+        if (e.key in categoryColors) {
+  	updateCategorySelection(e.key);
+        }
+      }
+    }
+
+    // zooming
+    function onMouseWheel(e) {
+      if(Math.max(-1, Math.min(1, (e.wheelDelta || -e.detail)))>0) {
+	zoom = 1.05;
+      } else {
+	zoom = 1/1.05;
+      }
+      var local = stage.globalToLocal(stage.mouseX,stage.mouseY);
+      stage.regX = local.x;
+      stage.regY = local.y;
+      stage.x = stage.mouseX;
+      stage.y = stage.mouseY;	
+      stage.scaleX=stage.scaleY *= zoom;
+
+      stage.update();
+
+      return e.preventDefault() && false;
+    }
+
+    // construct the tsv file containing the annotations
+    // spots on columns and AARs on rows
+    // annotation information of each spot is one-hot encoded
+    function downloadAnnotations() {
+      let csvContent = 'data:text/csv;charset=utf-8,';
+
+      // first row has coordinates (first column is empty)
+      spots.forEach(function(spot) {
+        csvContent += '\t'+spot.coordinate;
+      });
+
+      // construct the annotation matrix row by row
+      AARs.forEach(function(AAR) {
+	let row = '\r\n'+AAR;
+	spots.forEach(function(spot) {
+	  if (spot.annotation == AAR) {
+	    row += '\t'+'1';
+	  } else {
+	    row += '\t'+'0';
+	  }
+	});
+	csvContent += row;
+      });
+
+      var encodedUri = encodeURI(csvContent);
+
+      var link = document.createElement('a');
+      link.setAttribute('href',encodedUri);
+      link.setAttribute('download',outputFile+'.annotations.tsv');
+      document.body.appendChild(link); // Required for FF
+
+      link.click();
+
+      $('#overlay').hide();
+    }
+
+    function updateSpotAnnotation(spot,annotation) {
+      // annotated spots are less transparent
+      if (categoryColors[annotation].label == 'Undefined') {
+	  spot.graphics.clear().setStrokeStyle(0.25).beginStroke('#00000080').beginFill('#80808010').drawCircle(0,0,0.5*100e-6*stage.canvas.width/6.0e-3).endFill();
+        spot.alpha = 1.0;
+      } else {
+        spot.graphics.clear().beginFill(categoryColors[annotation].color).drawCircle(0,0,0.5*100e-6*stage.canvas.width/6.0e-3).endFill();
+        spot.alpha = 0.8;
+      }
+
+      // update the AAR category of the spot
+      spot.annotation = categoryColors[annotation].label;
+    }
+
+    function initializeCategorySelection(currentKey) {
+      let output = '' 
+      for (let key in categoryColors) { 
+	output += '<div id="category_'+key+'" onclick="updateCategorySelection('+"'"+key+"'"+')">'+categoryColors[key].label+' (<kbd>'+ key + '</kbd>)</div>';
+      }
+      document.getElementById('category').innerHTML = output;
+
+      for (let key in categoryColors) {
+        document.getElementById('category_'+key).style.color = categoryColors[key].color;
+        if (currentKey != key) {
+	  // inactive annotation category
+          document.getElementById('category_'+key).style.opacity = 0.5;
+	} else {
+	  // active annotation category
+          document.getElementById('category_'+currentKey).style.opacity = 1;
+          document.getElementById('category_'+currentKey).style.fontWeight = 'bold';
+	}
+      }
+    }
+
+    function updateCategorySelection(key) {
+      // make the previous annotation category inactive
+      document.getElementById('category_'+currentKey).style.opacity = 0.5;
+      document.getElementById('category_'+currentKey).style.fontWeight = 'normal';
+      // make the new annotation category active
+      document.getElementById('category_'+key).style.opacity = 1;
+      document.getElementById('category_'+key).style.fontWeight = 'bold';
+      currentKey = key;
+    }
+
+    function moveTissueSection(e) {
+      var local = stage.globalToLocal(stage.mouseX, stage.mouseY);
+      e.target.x = local.x+e.target.offset_x;
+      e.target.y = local.y+e.target.offset_y;
+      stage.update();
+    }
+
+    function moveTissueSectionInit(e) {
+      // disable the stage panning
+      stage.removeAllEventListeners('stagemousemove');
+
+      var local = stage.globalToLocal(stage.mouseX, stage.mouseY);
+      e.target.offset_x = e.target.x - local.x;
+      e.target.offset_y = e.target.y - local.y;
+
+      e.target.addEventListener('pressmove',moveTissueSection);
+
+      e.target.x = e.target.offset_x;
+      e.target.y = e.target.offset_y;
+
+      moveTissueSection(e);
+
+      stage.update();
+    }
+
+    function rotateTissueSection(e) {
+      let rads = Math.atan2(stage.mouseY-e.target.y,stage.mouseX-e.target.x);
+      let angle = rads*(180.0/Math.PI)-e.target.offset_angle;
+      e.target.rotation = angle;
+      stage.update();
+    }
+
+    function rotateTissueSectionInit(e) {
+      // disable the stage panning
+      stage.removeAllEventListeners('stagemousemove');
+
+      e.target.addEventListener('pressmove',rotateTissueSection);
+      
+      let rads = Math.atan2(stage.mouseY-e.target.y,stage.mouseX-e.target.x);
+      let angle = rads*(180.0/Math.PI)-e.target.rotation;
+      e.target.offset_angle = angle;
+      e.target.rotation = angle;
+
+      rotateTissueSection(e);
+
+      stage.update();
+    }
+
+    // from spot coordinates to pixel coordinates
+    function fromSpotToPixel(tmp) {
+      return [(tmp[0]-1)*pixelDim,(tmp[1]-1)*pixelDim];
+    }
+
+    // from pixel coordinates to spot coordinates
+    function fromPixelToSpot(tmp) {
+      return [tmp[0]/pixelDim+1,tmp[1]/pixelDim+1];
+    }
+
+    function init() {
+      stage = new createjs.Stage('canvas');
+
+      window.addEventListener('keydown',modifier);
+
+      document.getElementById('canvas').addEventListener('wheel',onMouseWheel,{capture: false});
+
+      // panning
+      stage.addEventListener('stagemousedown', function(e) {
+	var offset={x:stage.x-e.stageX,y:stage.y-e.stageY};
+	stage.addEventListener('stagemousemove',function(ev) {
+		stage.x = ev.stageX+offset.x;
+		stage.y = ev.stageY+offset.y;
+		stage.update();
+	});
+	stage.addEventListener('stagemouseup', function(){
+		stage.removeAllEventListeners('stagemousemove');
+	});
+      }); 
+
+      if (TENSORFLOW_ANNOTATION) {
+        if (modifierActive ) {
+          document.getElementById('mode').innerHTML = 'Rotate mode on (<kbd>⌘</kbd>)';
+        } else {
+	  document.getElementById('mode').innerHTML = 'Move mode on (<kbd>⌘</kbd>)';
+	}
+      }
+
+      if (TENSORFLOW_ANNOTATION) {
+        // adding idealized spinal cord for registering tissue sections (tensorflow classification)
+        stage.on('dblclick', function (evt) {
+  
+  	function drawTissueSection() {
+  	  let tissueSection = new createjs.Shape();
+  	  tissueSection.graphics.clear().beginBitmapFill(img).drawRect(0,0,img.width,img.height);
+  	  tissueSection.scaleX = tissueSection.scaleY = (13*pixelDim)/img.width;
+  	  // registration point is the middle point
+  	  tissueSection.regX = img.width/2.0;
+  	  tissueSection.regY = img.height/2.0;
+  
+  	  tissueSection.alpha = 0.8;
+  
+  	  // required if the zoom scale is not 1
+  	  var local = stage.globalToLocal(stage.mouseX, stage.mouseY);
+            tissueSection.x = local.x;
+            tissueSection.y = local.y;
+  
+  	  // add the event listener based on the current selection (rotate or move)
+  	  if (modifierActive) {
+  	    tissueSection.addEventListener('mousedown',rotateTissueSectionInit);
+  	  } else {
+  	    tissueSection.addEventListener('mousedown',moveTissueSectionInit);
+  	  }
+  
+  	  tissueSection.addEventListener('pressup',function() {
+  	    tissueSection.removeAllEventListeners('pressmove');
+  	  });
+  
+	  if (TENSORFLOW_ANNOTATION) {
+            // enable the tensorflow based annotation
+  	    document.getElementById('annotateSpots').disabled = false;
+	  }
+  
+  	  tissueSections.push(tissueSection);
+            stage.addChild(tissueSection);
+  
+            stage.update();
+  	}
+
+        var img = new Image();
+  	img.onload = drawTissueSection
+  	img.crossOrigin = '';
+          img.src = 'https://dl.dropboxusercontent.com/s/ie7kclsww3zuu64/sc.png';
+  
+        });
+      }
+    }
+
+    function loadHE() {
+      var img = new Image();
+      img.onload = drawHE;
+      tissueSections = [];
+      img.src = URL.createObjectURL(this.files[0])
+    };
+
+    function drawHE() {
+      heImage = this;
+
+      imageDims[0] = this.width;
+      imageDims[1] = this.height;
+
+      pixelDim = SPOT_SPACING/((ARRAY_WIDTH)/(stage.canvas.width));
+
+      // get rid of the previous spots
+      spots.forEach(function(spot) {
+        stage.removeChild(spot);
+      });
+      spots = [];
+
+      stage.canvas.height = this.height/(this.width/WIDTH);
+      var bitmap = new createjs.Bitmap(this);
+      bitmap.scaleX=WIDTH/this.width;
+      bitmap.scaleY=WIDTH/this.width;
+
+      stage.addChild(bitmap);
+
+      stage.update();
+
+      document.getElementById('spotImage').disabled = false;
+      document.getElementById('spots').disabled = false;
+      document.getElementById('downloadAnnotations').disabled = true;
+      document.getElementById('annotations').disabled = true;
+      document.getElementById('spotImage').value = '';
+      document.getElementById('spots').value = '';
+      document.getElementById('annotations').value = '';
+
+      $('#overlay').hide();
+    }
+
+    function loadSpotImage() {
+      var img = new Image();
+      img.onload = drawSpotImage;
+      img.src = URL.createObjectURL(this.files[0])
+    };
+
+    function drawSpotImage() {
+      var bitmap = new createjs.Bitmap(this);
+      bitmap.scaleX=WIDTH/this.width;
+      bitmap.scaleY=WIDTH/this.width;
+
+      // make the background transparent
+      var filter = new createjs.ThresholdFilter(0x80,0x80,0x80,0x00000000,0x80808060);
+      bitmap.filters = [filter];
+      bitmap.cache(0,0,this.width,this.height);
+
+      stage.addChild(bitmap);
+      stage.update();
+
+      document.getElementById('spots').disabled = false;
+      document.getElementById('downloadAnnotations').disabled = true;
+      document.getElementById('annotations').disabled = true;
+      document.getElementById('spots').value = '';
+      document.getElementById('annotations').value = '';
+
+      $('#overlay').hide();
+    }
+
+    function loadAnnotations() {
+      var file = this.files[0]; 
+      var reader = new FileReader();
+      reader.onload = function() {
+	var text = reader.result;
+
+      	var rows = text.split('\n');
+	// get the spot coordinates from the first row
+	var spotCoordinates = rows[0].split('\t').slice(1);
+	// loop over the AAR categories
+	rows.slice(1).forEach(function(row) {
+	  let fields = row.split('\t');
+	  // the label of the current AAR category
+	  let tmp_AAR = fields[0];
+	  // which of the spots have this AAR category
+	  let memberships = fields.slice(1).map(foo => foo == 1);
+
+	  memberships.forEach((val,index) => {
+	    if (val) {
+	      // ugly loop
+	      for (let spot of spots) {
+	        if (spot.coordinate == spotCoordinates[index]) {
+		  // ugly loop
+	          for (let key in categoryColors) {
+		    if (categoryColors[key].label == tmp_AAR) {
+                      updateSpotAnnotation(spot,key);
+		    }
+		  }
+		}	
+	      }
+	    }
+	  });
+	});
+        stage.update();
+      }
+      reader.readAsText(file);
+      document.getElementById('downloadAnnotations').disabled = false;
+      document.getElementById('annotations').disabled = false;
+
+      $('#overlay').hide();
+    };
+
+    function loadSpots() {
+      // get rid of the previous spots
+      spots.forEach(function(spot) {
+        stage.removeChild(spot);
+      });
+      spots = [];
+
+      var tmpCanvas = document.createElement('canvas');
+      var ctx = tmpCanvas.getContext('2d');
+
+      // 0.5 * length of a side of the crop square
+      foo = Math.round(imageDims[1]/ARRAY_HEIGHT*CROP_SIZE/2.0);
+
+      var pixelDim2 = SPOT_SPACING/((ARRAY_WIDTH)/(imageDims[0]));
+      var spotInPixels = [];
+
+      var file = this.files[0]; 
+      outputFile = this.files[0]['name'];
+      var reader = new FileReader();
+
+      document.getElementById('overlay').style.display = 'block';
+
+      reader.onload = function() {
+	var text = reader.result;
+
+      	var coordinates = text.split('\n').shift().trim().split('\t');
+	coordinates.forEach(function(coordinate) {
+	  var tmp = coordinate.split('_');
+	  var spot = new createjs.Shape();
+
+          spotInPixels[0] = (tmp[0]-1)*pixelDim2;
+	  spotInPixels[1] = (tmp[1]-1)*pixelDim2; 
+
+	  if (TENSORFLOW_ANNOTATION) {
+            // crop the local neighborhood of the spot
+            ctx.drawImage(heImage,spotInPixels[0]-foo,spotInPixels[1]-foo,foo*2,foo*2,0,0,100,100);
+	    // make the pixel data compatible with tensorflow
+            spot.tensorData = tf.fromPixels(ctx.getImageData(0,0,100,100)).toFloat().div(255);
+	  }
+
+	  spot.graphics.setStrokeStyle(0.25).beginStroke('#00000080').beginFill('#80808010').drawCircle(0,0,0.5*SPOT_DIAMETER*stage.canvas.width/ARRAY_WIDTH).endFill();
+
+          tmp2 = fromSpotToPixel(tmp);
+	  spot.x = tmp2[0];
+	  spot.y = tmp2[1];
+
+	  spot.annotation = 'Undefined';
+	  spot.coordinate = coordinate;
+
+	  spot.addEventListener('click', function(event) { 
+	    updateSpotAnnotation(event.target,currentKey)
+
+            stage.update();
+	  });
+
+	  spots.push(spot);
+          stage.addChild(spot);
+          stage.update();
+	}); 
+
+        $('#overlay').hide();
+      }
+      reader.readAsText(file);
+      document.getElementById('spotImage').disabled = true;
+      document.getElementById('downloadAnnotations').disabled = false;
+      document.getElementById('annotations').disabled = false;
+      document.getElementById('annotations').value = '';
+    };
+
+  </script>
+</head>
+
+<body onload="init();">
+
+  <div id="container">
+    <canvas id="canvas" style="background-color:#ECECEC;border:1px solid gray;"></canvas>
+    <div id="overlay" class="lds-spinner" style="display:none;"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+  </div>
+
+  <div id="category" class="flex-container" style="position:relative;max-width:500px;margin-top:10px;"></div>
+
+  <div style="position:relative;">
+  </div>
+  <div style="position:relative;">
+  <div id="mode" style="margin-top:10px;"></div>
+  <div style="margin-top:10px;">
+  Upload HE image: <input type="file" value="HE image" id="heImage" />
+  <br>
+  Upload spot image (optional): <input type="file" value="Spot image" id="spotImage" disabled="True" />
+  <br>
+  Upload count file: <input type="file" value="Count file" id="spots" disabled="True" />
+  <br>
+  Restore annotations: <input type="file" value="Annotation file" id="annotations" disabled="True" />
+  </div>
+  </div>
+
+  <div style="position:relative;margin-top:10px;">
+  <input type="button" id="annotateSpots" value="Automatic annotation" disabled="True" />
+  <input type="button" id="downloadAnnotations" value="Download annotations" disabled="True" />
+  </div>
+
+  <script>
+    document.getElementById('canvas').width = WIDTH;
+    document.getElementById('canvas').height = WIDTH*ARRAY_HEIGHT/ARRAY_WIDTH;
+
+    document.getElementById('container').style.width = WIDTH+"px";
+    document.getElementById('container').style.height = WIDTH*ARRAY_HEIGHT/ARRAY_WIDTH+"px";
+
+    document.getElementById('canvas').width = WIDTH;
+
+    // default AAR category selection is "Undefined"
+    initializeCategorySelection('u');
+
+    // HE image upload
+    document.getElementById('heImage').onchange = function () {$('#overlay').show(50,loadHE.bind(this));};
+
+    // spot image upload
+    document.getElementById('spotImage').onchange = function () {$('#overlay').show(50,loadSpotImage.bind(this));};
+
+    // annotations upload (restore)
+    document.getElementById('annotations').onchange = function () {$('#overlay').show(50,loadAnnotations.bind(this));};
+
+    // counts file upload
+    document.getElementById('spots').onchange = function () {$('#overlay').show(50,loadSpots.bind(this));};
+
+    // annotate spots
+    if (TENSORFLOW_ANNOTATION) {
+      document.getElementById('annotateSpots').onclick = function () {$('#overlay').show(50,annotateSpots.bind(this));};
+    } else {
+      var element = document.getElementById('annotateSpots');
+      element.parentNode.removeChild(element)
+      var element = document.getElementById('mode');
+      element.parentNode.removeChild(element)
+    }
+
+    // download annotations
+    document.getElementById('downloadAnnotations').onclick = function () {$('#overlay').show(50,downloadAnnotations.bind(this));};
+  </script>
+
+</body>
+</html>
