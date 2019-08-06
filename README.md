@@ -31,6 +31,10 @@ Usage
 	- Change the current AAR selection using mouse or keyboard shortcuts 
 8. Download the annotations
 
+The following animation demonstrates the aforementioned steps.
+
+![Demo of Span](Span.gif)
+
 The directory ``examples`` contains some example data.
 
 Experimental
@@ -46,6 +50,10 @@ The multimodal classifier was trained on manually annotated mouse lumbar spinal 
 3. Move and rotate the template so that the reticle is centered on the central canal and the arrow aligns with the ventral-dorsal axis 
 4. Press the "Automatic annotation" button
 5. Curate manually the predictions
+
+The following animation demonstrates the aforementioned steps.
+
+![Demo of Span with tensorflow-based semi-automatic annotation](Span_TF.gif)
 
 ### References
 [1] Ståhl, Patrik L., et al. "Visualization and analysis of gene expression in tissue sections by spatial transcriptomics." *Science* 353.6294 (2016): 78-82.
