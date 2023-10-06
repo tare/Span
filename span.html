@@ -178,7 +178,7 @@
     if (TENSORFLOW_ANNOTATION) {
       // tensorflow.js
       async function loadModel() {
-        const model = await tf.loadModel('https://dl.dropboxusercontent.com/s/ix9r5cgy2uba2x3/model.json');
+        const model = await tf.loadModel('https://koti.aijo.fi/~tare/span_keras_model/model.json');
         return model;
       };
 
@@ -496,7 +496,7 @@
         var img = new Image();
   	img.onload = drawTissueSection
   	img.crossOrigin = '';
-          img.src = 'https://dl.dropboxusercontent.com/s/ie7kclsww3zuu64/sc.png';
+          img.src = 'https://koti.aijo.fi/~tare/span_keras_model/sc.png';
   
         });
       }
